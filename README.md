@@ -1,2 +1,2 @@
 # JSPlatfromer
-DIG 3480C JS Platformer
+DIG 3480C - JS Platformer
