@@ -1,2 +1,2 @@
 # JSPlatfromer
-Lab5
+DIG 3480C JS Platformer
