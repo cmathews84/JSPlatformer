@@ -1,3 +1,10 @@
+// Map each class of actor to a character
+var actorChars = {
+  "@": Player,
+  "o": Coin, // A coin will wobble up and down
+  "M": Monster
+};
+
 function Level(plan) {
   // Use the length of a single row to set the width of the level
   this.width = plan[0].length;
@@ -7,6 +14,9 @@ function Level(plan) {
 
   // Store the individual tiles in our own, separate array
   this.grid = [];
+
+  // Store a list of actors to process each frame
+  this.actors = [];
 
   // Loop through each row in the plan, creating an array in our grid
   for (var y = 0; y < this.height; y++) {
@@ -18,13 +28,13 @@ function Level(plan) {
       // If the character is ' ', assign null.
 
       var ch = line[x], fieldType = null;
+      var Actor = actorChars[ch];
       // Use if and else to handle the three cases
-      if (ch==='@')
-        // Create a new player at that grid position.
-        this.player = new Player(new Vector(x, y));
+      if (Actor)
+        // Create a new actor at that grid position.
+        this.actors.push(new Actor(new Vector(x, y), ch));
       else if (ch == "x")
         fieldType = "wall";
-	  //LAB 5 HERE
       // Because there is a third case (space ' '), use an "else if" instead of "else"
       else if (ch == "!")
         fieldType = "lava";
@@ -35,6 +45,11 @@ function Level(plan) {
     // Push the entire row onto the array of rows.
     this.grid.push(gridLine);
   }
+
+  // Find and assign the player character and assign to Level.player
+  this.player = this.actors.filter(function(actor) {
+    return actor.type == "player";
+  })[0];
 }
 
 function Vector(x, y) {
@@ -60,10 +75,24 @@ function Player(pos) {
 }
 Player.prototype.type = "player";
 
+// Add a new actor type as a class
+function Coin(pos) {
+  this.basePos = this.pos = pos.plus(new Vector(0.2, 0.1));
+  this.size = new Vector(0.6, 0.6);
+  // Make it go back and forth in a sine wave.
+  this.wobble = Math.random() * Math.PI * 2;
+}
+Coin.prototype.type = "coin";
+
+function Monster(pos) {
+	this.basePos = this.pos = pos.plus(new Vector(0.2,0.1));
+	this.size = new Vector(0.6,0.6);
+	this.wobble = Math.random() * Math.PI * 2;
+}
+Monster.prototype.type = 'monster';
+
 // Helper function to easily create an element of a type provided 
 // and assign it a class.
-/*My Notes: Know what it does and why- what does createElement expect- it is the name of an HTML thing (name)
-ANY HTML element can have a class element which lives in CSS- Must match up exactly.*/
 function elt(name, className) {
   var elt = document.createElement(name);
   if (className) elt.className = className;
@@ -72,10 +101,6 @@ function elt(name, className) {
 
 // Main display class. We keep track of the scroll window using it.
 function DOMDisplay(parent, level) {
-
-	//The parent is the document, level is the level
-	
-/*My Notes: Create a wrapper Div that we will attach evertything to in the grid*/
 
 // this.wrap corresponds to a div created with class of "game"
   this.wrap = parent.appendChild(elt("div", "game"));
@@ -93,16 +118,12 @@ function DOMDisplay(parent, level) {
 
 var scale = 20;
 
-/* My Notes: DOMDisplay has method called drawBackground- will always call the display we are calling the moving box - have to have the graphics to call them. We make a table - a grid. 
-ELT function we defined earlier the thing you want and the name of the CSS class.*/
-
 DOMDisplay.prototype.drawBackground = function() {
   var table = elt("table", "background");
   table.style.width = this.level.width * scale + "px";
 
   // Assign a class to new row element directly from the string from
   // each tile in grid
-     /* My Notes: For each thing here run a function on it and display it as a row(each row has its own array)*/
   this.level.grid.forEach(function(row) {
     var rowElt = table.appendChild(elt("tr"));
     rowElt.style.height = scale + "px";
@@ -113,25 +134,27 @@ DOMDisplay.prototype.drawBackground = function() {
   return table;
 };
 
-// Draw the player agent
-DOMDisplay.prototype.drawPlayer = function() {
+// All actors are above (in front of) background elements.  
+DOMDisplay.prototype.drawActors = function() {
   // Create a new container div for actor dom elements
   var wrap = elt("div");
 
-  var actor = this.level.player;
-  var rect = wrap.appendChild(elt("div",
+  // Create a new element for each actor each frame
+  this.level.actors.forEach(function(actor) {
+    var rect = wrap.appendChild(elt("div",
                                     "actor " + actor.type));
-  rect.style.width = actor.size.x * scale + "px";
-  rect.style.height = actor.size.y * scale + "px";
-  rect.style.left = actor.pos.x * scale + "px";
-  rect.style.top = actor.pos.y * scale + "px";
+    rect.style.width = actor.size.x * scale + "px";
+    rect.style.height = actor.size.y * scale + "px";
+    rect.style.left = actor.pos.x * scale + "px";
+    rect.style.top = actor.pos.y * scale + "px";
+  });
   return wrap;
 };
 
 DOMDisplay.prototype.drawFrame = function() {
   if (this.actorLayer)
     this.wrap.removeChild(this.actorLayer);
-  this.actorLayer = this.wrap.appendChild(this.drawPlayer());
+  this.actorLayer = this.wrap.appendChild(this.drawActors());
   this.scrollPlayerIntoView();
 };
 
@@ -186,13 +209,35 @@ Level.prototype.obstacleAt = function(pos, size) {
   }
 };
 
+// Collision detection for actors is handled separately from 
+// tiles. 
+Level.prototype.actorAt = function(actor) {
+  // Loop over each actor in our actors list and compare the 
+  // boundary boxes for overlaps.
+  for (var i = 0; i < this.actors.length; i++) {
+    var other = this.actors[i];
+    // if the other actor isn't the acting actor
+    if (other != actor &&
+        actor.pos.x + actor.size.x > other.pos.x &&
+        actor.pos.x < other.pos.x + other.size.x &&
+        actor.pos.y + actor.size.y > other.pos.y &&
+        actor.pos.y < other.pos.y + other.size.y)
+      // check if the boundaries overlap by comparing all sides for
+      // overlap and return the other actor if found
+      return other;
+  }
+};
+
 // Update simulation each step based on keys & step size
 Level.prototype.animate = function(step, keys) {
 
   // Ensure each is maximum 100 milliseconds 
   while (step > 0) {
     var thisStep = Math.min(step, maxStep);
-      this.player.act(thisStep, this, keys);
+    this.actors.forEach(function(actor) {
+      // Allow each actor to act on their surroundings
+      actor.act(thisStep, this, keys);
+    }, this);
    // Do this by looping across the step size, subtracing either the
    // step itself or 100 milliseconds
     step -= thisStep;
@@ -200,8 +245,24 @@ Level.prototype.animate = function(step, keys) {
 };
 
 var maxStep = 0.05;
-// edit this speed for LAB 6
-var playerXSpeed = 8; 
+
+var wobbleSpeed = 8, wobbleDist = 0.07;
+
+Coin.prototype.act = function(step) {
+  this.wobble += step * wobbleSpeed;
+  var wobblePos = Math.sin(this.wobble) * wobbleDist;
+  this.pos = this.basePos.plus(new Vector(0, wobblePos));
+};
+Monster.prototype.act = function(step) {
+  this.wobble += step * wobbleSpeed;
+  var wobblePos = Math.sin(this.wobble) * wobbleDist;
+  this.pos = this.basePos.plus(new Vector(0, wobblePos));
+};
+
+var maxStep = 0.05;
+
+var playerXSpeed = 8;
+
 
 Player.prototype.moveX = function(step, level, keys) {
   this.speed.x = 0;
@@ -218,21 +279,21 @@ Player.prototype.moveX = function(step, level, keys) {
   if(obstacle!="wall")
     this.pos = newPos;
 };
-// Play with these numbers below for LAB 6
-var gravity = 38;  
+
+var gravity = 38;
 var jumpSpeed = 19;
 var playerYSpeed = 8;
 
 Player.prototype.moveY = function(step, level, keys) {
   // Accelerate player downward (always)
-  this.speed.y += step * gravity;
+  this.speed.y += step * gravity;;
   var motion = new Vector(0, this.speed.y * step);
   var newPos = this.pos.plus(motion);
   var obstacle = level.obstacleAt(newPos, this.size);
   // The floor is also an obstacle -- only allow players to 
   // jump if they are touching some obstacle.
   
-  //LAB 6
+  
   if (obstacle == "lava") {
     this.pos = new Vector (10,10);
   }
@@ -245,15 +306,30 @@ Player.prototype.moveY = function(step, level, keys) {
     this.pos = newPos;
   }
 };
-
 Player.prototype.act = function(step, level, keys) {
   this.moveX(step, level, keys);
   this.moveY(step, level, keys);
+
+  var otherActor = level.actorAt(this);
+  if (otherActor)
+    level.playerTouched(otherActor.type, otherActor);
 };
 
+Level.prototype.playerTouched = function(type, actor) {
+  if (type == "coin") {
+    this.actors = this.actors.filter(function(other) {
+      return other != actor;
+    });
+  }
+	if(type == "monster") {
+		this.actors = this.actors.filter(function(other) {
+			return other != actor;
+});
+ 	}
+ };
 
 // Arrow key codes for readibility
-var arrowCodes = {37: "left", 38: "up", 39: "right", 40: "down"};
+var arrowCodes = {37: "left", 38: "up", 39: "right"};
 
 // Translate the codes pressed from a key event
 function trackKeys(codes) {
@@ -317,7 +393,6 @@ function runGame(plans, Display) {
   function startLevel(n) {
     // Create a new level using the nth element of array plans
     // Pass in a reference to Display function, DOMDisplay (in index.html).
-	/* My Notes:  We know that this is a constructor because of the Capital Letter in the word "Level"*/
     runLevel(new Level(plans[n]), Display);
   }
   startLevel(0);
